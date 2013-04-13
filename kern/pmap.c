@@ -266,8 +266,10 @@ page_init(void)
 	for (; i < (EXTPHYSMEM >> PGSHIFT); i++)
 		pages[i].pp_ref++;
 
-	// 4) 1) the kernel data, pgdir, and this pages are in used, 
-	//       thus getting the nextfree address from boot_alloc(0)
+	// 4) 1) the kernel data, pgdir, and pages array are in used, 
+	//       so the memory spaces before the end of pages array are 
+	//       not allowed to use. The address of the next byte of 
+	//       the end of pages array is get via boot_alloc(0)
 	for (; i < PGNUM(PADDR(boot_alloc(0))); i++)
 		pages[i].pp_ref++;
 
@@ -295,7 +297,8 @@ page_alloc(int alloc_flags)
 
 	struct PageInfo *pp;
 
-	if ((pp = page_free_list) == NULL)
+	pp = page_free_list;
+	if (pp == NULL)
 		return NULL;
 
 	page_free_list = pp->pp_link;
@@ -314,8 +317,6 @@ void
 page_free(struct PageInfo *pp)
 {
 	// Fill this function in
-	
-	struct PageInfo *p;
 
 	assert((pp != NULL));
 	assert((pp->pp_ref == 0));
@@ -361,7 +362,26 @@ pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
 	// Fill this function in
-	return NULL;
+	pde_t *pde;
+	pte_t *pgtab;
+
+	pde = &pgdir[PDX(va)];
+	if ((*pde & PTE_P) == 0) {
+		struct PageInfo *pp;
+		if (create == false)
+			return NULL;
+
+		pp = page_alloc(ALLOC_ZERO);
+		if (pp == NULL)
+			return NULL;
+
+		*pde = (page2pa(pp) | PTE_P);
+		pp->pp_ref++;
+	}
+
+	pgtab = KADDR(PTE_ADDR(*pde));
+
+	return &pgtab[PTX(va)];
 }
 
 //
@@ -378,6 +398,13 @@ static void
 boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
 	// Fill this function in
+	size_t i;
+	pte_t *ppte;
+
+	for (i = 0; i < size; i += PGSIZE) {
+		ppte = pgdir_walk(pgdir, (void *)(va + i), true);
+		*ppte |= (PTE_ADDR(pa + i) | perm | PTE_P);
+	}
 }
 
 //
@@ -409,6 +436,20 @@ int
 page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 {
 	// Fill this function in
+	pte_t *pte;
+
+	pte = pgdir_walk(pgdir, va, true);
+	if (pte == NULL)
+		return (-E_NO_MEM);
+
+	if (!(*pte & PTE_P) || (PTE_ADDR(*pte) != page2pa(pp)))
+		page_remove(pgdir, va);
+
+	if (!(*pte & PTE_P)) 
+		pp->pp_ref++;
+	*pte = (page2pa(pp) | perm | PTE_P);
+	pgdir[PDX(va)] |= (perm | PTE_P);
+
 	return 0;
 }
 
@@ -427,7 +468,19 @@ struct PageInfo *
 page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 {
 	// Fill this function in
-	return NULL;
+	pte_t *pte;
+	struct PageInfo *pp;
+
+	pte = pgdir_walk(pgdir, va, 0);
+	if ((pte == NULL) || !(*pte & PTE_P))
+		return NULL;
+
+	pp = pa2page(PTE_ADDR(*pte));
+
+	if (pte_store != NULL)
+		*pte_store = pte;
+
+	return pp;
 }
 
 //
@@ -449,6 +502,24 @@ void
 page_remove(pde_t *pgdir, void *va)
 {
 	// Fill this function in
+	struct PageInfo *pp;
+	pde_t pde;
+	pte_t *pgtab;
+
+	pp = page_lookup(pgdir, va, NULL);
+	if (pp == NULL)
+		return;
+
+	pde = pgdir[PDX(va)];
+	assert(pde & PTE_P);
+
+	pgtab = KADDR(PTE_ADDR(pde));
+	assert(pgtab[PTX(va)] & PTE_P);
+
+	pgtab[PTX(va)] = 0;
+	tlb_invalidate(pgdir, va);
+	
+	page_decref(pp);
 }
 
 //
@@ -769,7 +840,7 @@ check_page(void)
 	assert((pp = page_alloc(0)) && pp == pp2);
 
 	// unmapping pp1 at 0 should keep pp1 at PGSIZE
-	page_remove(kern_pgdir, 0x0);
+	page_remove(kern_pgdir, 0x0); 
 	assert(check_va2pa(kern_pgdir, 0x0) == ~0);
 	assert(check_va2pa(kern_pgdir, PGSIZE) == page2pa(pp1));
 	assert(pp1->pp_ref == 1);
