@@ -65,6 +65,33 @@ trap_init(void)
 	extern struct Segdesc gdt[];
 
 	// LAB 3: Your code here.
+	uint32_t _off;
+#define _SETGATE(gate, istrap, sel, off, dpl) \
+	extern uint32_t off; \
+	_off = (uint32_t)&off; \
+	SETGATE(gate, istrap, sel, _off, dpl);
+
+	_SETGATE(idt[0], false, GD_KT, handler0, 0);
+	_SETGATE(idt[1], false, GD_KT, handler1, 0);
+	_SETGATE(idt[2], false, GD_KT, handler2, 0);
+	_SETGATE(idt[3], false, GD_KT, handler3, 0);
+	_SETGATE(idt[4], false, GD_KT, handler4, 0);
+	_SETGATE(idt[5], false, GD_KT, handler5, 0);
+	_SETGATE(idt[6], false, GD_KT, handler6, 0);
+	_SETGATE(idt[7], false, GD_KT, handler7, 0);
+	_SETGATE(idt[8], false, GD_KT, handler8, 0);
+	_SETGATE(idt[10], false, GD_KT, handler10, 0);
+	_SETGATE(idt[11], false, GD_KT, handler11, 0);
+	_SETGATE(idt[12], false, GD_KT, handler12, 0);
+	_SETGATE(idt[13], false, GD_KT, handler13, 0);
+	_SETGATE(idt[14], false, GD_KT, handler14, 0);
+	_SETGATE(idt[16], false, GD_KT, handler16, 0);
+	_SETGATE(idt[17], false, GD_KT, handler17, 0);
+	_SETGATE(idt[18], false, GD_KT, handler18, 0);
+	_SETGATE(idt[19], false, GD_KT, handler19, 0);
+	_SETGATE(idt[48], true, GD_KT, handler48, 0x3);
+
+	cprintf("trap_init: handler48 = %p\n", handler48);
 
 	// Per-CPU setup 
 	trap_init_percpu();
