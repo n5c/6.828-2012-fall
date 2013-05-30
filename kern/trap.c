@@ -170,6 +170,7 @@ trap_dispatch(struct Trapframe *tf)
 {
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
+	page_fault_handler(tf);
 
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
