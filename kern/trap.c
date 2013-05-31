@@ -74,7 +74,7 @@ trap_init(void)
 	_SETGATE(idt[0], false, GD_KT, handler0, 0);
 	_SETGATE(idt[1], false, GD_KT, handler1, 0);
 	_SETGATE(idt[2], false, GD_KT, handler2, 0);
-	_SETGATE(idt[3], false, GD_KT, handler3, 0);
+	_SETGATE(idt[3], false, GD_KT, handler3, 0x3);
 	_SETGATE(idt[4], false, GD_KT, handler4, 0);
 	_SETGATE(idt[5], false, GD_KT, handler5, 0);
 	_SETGATE(idt[6], false, GD_KT, handler6, 0);
@@ -90,8 +90,6 @@ trap_init(void)
 	_SETGATE(idt[18], false, GD_KT, handler18, 0);
 	_SETGATE(idt[19], false, GD_KT, handler19, 0);
 	_SETGATE(idt[48], true, GD_KT, handler48, 0x3);
-
-	cprintf("trap_init: handler48 = %p\n", handler48);
 
 	// Per-CPU setup 
 	trap_init_percpu();
@@ -232,6 +230,8 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 
 	// LAB 3: Your code here.
+	if (tf->tf_trapno == T_BRKPT)
+		monitor(tf);
 
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.
