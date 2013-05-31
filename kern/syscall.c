@@ -84,7 +84,7 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 	case SYS_getenvid:
 		result = sys_getenvid();
 		break;
-	SYS_env_destroy:
+	case SYS_env_destroy:
 		result = sys_env_destroy(a1);
 		break;
 	default:
