@@ -377,7 +377,7 @@ load_icode(struct Env *e, uint8_t *binary, size_t size)
 			continue;
 		if (ph->p_memsz < ph->p_filesz)
 			panic("load_icode: memsz < filesz");
-		region_alloc(e, (void *)ph->p_va, (ph->p_va + ph->p_memsz));
+		region_alloc(e, (void *)ph->p_va, ((ph->p_va % PGSIZE) + ph->p_memsz));
 
 		va0 = (void *)ROUNDDOWN(ph->p_va, PGSIZE);
 		for (i = 0; i < ph->p_filesz; i += PGSIZE) {
@@ -548,6 +548,7 @@ env_run(struct Env *e)
 	}
 
 	curenv = e;
+	curenv->env_status = ENV_RUNNING;
 	curenv->env_runs++;
 	lcr3(PADDR(curenv->env_pgdir));
 
