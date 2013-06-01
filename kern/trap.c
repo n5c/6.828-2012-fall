@@ -241,6 +241,10 @@ page_fault_handler(struct Trapframe *tf)
 	// LAB 3: Your code here.
 	if (tf->tf_trapno == T_BRKPT)
 		monitor(tf);
+	if ((tf->tf_cs & 0x3) == 0x0) {
+		print_trapframe(tf);
+		panic("page fault\n");
+	}
 
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.
