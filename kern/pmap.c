@@ -309,7 +309,17 @@ page_init(void)
 	pages[0].pp_ref++;
 
 	// 2) VA[PGSIZE, npages_basemem * PGSIZE) = PA[PGSIZE, IOPHYSMEM)
-	for (i = 1; i < npages_basemem; i++) {
+	for (i = 1; i < (MPENTRY_PADDR >> PGSHIFT); i++) {
+		pages[i].pp_ref = 0;
+		pages[i].pp_link = page_free_list;
+		page_free_list = &pages[i];
+	}
+
+	// MPENTRY_PADDR
+	pages[i].pp_ref++;
+	i++;
+
+	for (; i < npages_basemem; i++) {
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
@@ -621,7 +631,19 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+	// panic("mmio_map_region not implemented");
+
+	void *va = (void *)base;
+	size = ROUNDUP(size, PGSIZE);
+	if ((base + size) > MMIOLIM)
+	 	panic("mmio_map_region");
+
+	boot_map_region(kern_pgdir, base, size, pa, (PTE_PCD | PTE_PWT | PTE_W));
+
+	base += size;
+
+	return va;
+
 }
 
 static uintptr_t user_mem_check_addr;
