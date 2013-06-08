@@ -265,6 +265,19 @@ mem_init_mp(void)
 	//
 	// LAB 4: Your code here:
 
+	uint32_t i, j;
+	void *va;
+	pte_t *pte;
+
+	for (i = 0; i < NCPU; i++) {
+		va = (void *)((KSTACKTOP - (i * (KSTKSIZE + KSTKGAP))) - KSTKSIZE);
+		for (j = 0; j < KSTKSIZE; j += PGSIZE) {
+			pte = pgdir_walk(kern_pgdir, (va + j), true);
+			if (pte == NULL)
+				panic("mem_init_mp");
+			*pte = ((PADDR(percpu_kstacks[i]) + j) | PTE_W | PTE_P);
+		}
+	}
 }
 
 // --------------------------------------------------------------
@@ -439,7 +452,7 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 		if (pp == NULL)
 			return NULL;
 
-		*pde = (page2pa(pp) | PTE_P);
+		*pde = (page2pa(pp) | PTE_W | PTE_U | PTE_P);
 		pp->pp_ref++;
 	}
 
@@ -467,7 +480,6 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 
 	for (i = 0; i < size; i += PGSIZE) {
 		ppte = pgdir_walk(pgdir, (void *)(va + i), true);
-		pgdir[PDX(va + i)] = (PTE_ADDR(pgdir[PDX(va + i)]) | perm | PTE_P);
 		*ppte = (PTE_ADDR(pa + i) | perm | PTE_P);
 	}
 }
@@ -513,7 +525,6 @@ page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 	if (!(*pte & PTE_P)) 
 		pp->pp_ref++;
 	*pte = (page2pa(pp) | perm | PTE_P);
-	pgdir[PDX(va)] = (PTE_ADDR(pgdir[PDX(va)]) | (perm | PTE_P));
 
 	return 0;
 }
