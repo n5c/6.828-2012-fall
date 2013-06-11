@@ -96,7 +96,13 @@ trap_init(void)
 	_SETGATE(idt[17], false, GD_KT, handler17, 0);
 	_SETGATE(idt[18], false, GD_KT, handler18, 0);
 	_SETGATE(idt[19], false, GD_KT, handler19, 0);
+	_SETGATE(idt[32], false, GD_KT, handler32, 0);
+	_SETGATE(idt[33], false, GD_KT, handler33, 0);
+	_SETGATE(idt[36], false, GD_KT, handler36, 0);
+	_SETGATE(idt[39], false, GD_KT, handler39, 0);
+	_SETGATE(idt[46], false, GD_KT, handler46, 0);
 	_SETGATE(idt[48], true, GD_KT, handler48, 0x3);
+	_SETGATE(idt[51], false, GD_KT, handler51, 0);
 
 	// Per-CPU setup 
 	trap_init_percpu();
@@ -129,22 +135,21 @@ trap_init_percpu(void)
 	//
 	// LAB 4: Your code here:
 
-	uint32_t i = thiscpu->cpu_id;
-	struct Taskstate *thists = &thiscpu->cpu_ts;
-
 	// Setup a TSS so that we get the right stack
 	// when we trap to the kernel.
-	thists->ts_esp0 = (KSTACKTOP - (i * (KSTKSIZE + KSTKGAP)));
-	thists->ts_ss0 = GD_KD;
+	thiscpu->cpu_ts.ts_esp0 = (KSTACKTOP - 
+			(thiscpu->cpu_id * (KSTKSIZE + KSTKGAP)));
+	thiscpu->cpu_ts.ts_ss0 = GD_KD;
 
 	// Initialize the TSS slot of the gdt.
-	gdt[(GD_TSS0 >> 3) + i] = SEG16(STS_T32A, (uint32_t)(thists), 
+	gdt[(GD_TSS0 >> 3) + thiscpu->cpu_id] = SEG16(STS_T32A, 
+			(uint32_t)(&thiscpu->cpu_ts), 
 			sizeof(struct Taskstate), 0);
-	gdt[(GD_TSS0 >> 3) + i].sd_s = 0;
+	gdt[(GD_TSS0 >> 3) + thiscpu->cpu_id].sd_s = 0;
 
 	// Load the TSS selector (like other segment selectors, the
 	// bottom three bits are special; we leave them 0)
-	ltr(((GD_TSS0 >> 3) + i) << 3);
+	ltr(((GD_TSS0 >> 3) + thiscpu->cpu_id) << 3);
 
 	// Load the IDT
 	lidt(&idt_pd);
@@ -251,6 +256,7 @@ trap(struct Trapframe *tf)
 	// sched_yield()
 	if (xchg(&thiscpu->cpu_status, CPU_STARTED) == CPU_HALTED)
 		lock_kernel();
+
 	// Check that interrupts are disabled.  If this assertion
 	// fails, DO NOT be tempted to fix it by inserting a "cli" in
 	// the interrupt path.
@@ -262,6 +268,8 @@ trap(struct Trapframe *tf)
 		// serious kernel work.
 		// LAB 4: Your code here.
 		assert(curenv);
+
+		lock_kernel();
 
 		// Garbage collect if current enviroment is a zombie
 		if (curenv->env_status == ENV_DYING) {

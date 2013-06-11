@@ -275,7 +275,6 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 	// panic("syscall not implemented");
 
 	int32_t result = 0;
-
 	switch (syscallno) {
 	case SYS_cputs:
 		sys_cputs((char *)a1, a2);
@@ -288,6 +287,9 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 		break;
 	case SYS_env_destroy:
 		result = sys_env_destroy(a1);
+		break;
+	case SYS_yield:
+		sys_yield();
 		break;
 	default:
 		result = -E_INVAL;
