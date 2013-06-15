@@ -316,6 +316,7 @@ page_fault_handler(struct Trapframe *tf)
 	// LAB 3: Your code here.
 	if (tf->tf_trapno == T_BRKPT)
 		monitor(tf);
+
 	if ((tf->tf_cs & 0x3) == 0x0) {
 		print_trapframe(tf);
 		panic("page fault\n");
@@ -353,6 +354,34 @@ page_fault_handler(struct Trapframe *tf)
 	//   (the 'tf' variable points at 'curenv->env_tf').
 
 	// LAB 4: Your code here.
+	if (curenv->env_pgfault_upcall) {
+		struct UTrapframe *utf;
+
+		utf = (struct UTrapframe *)(UXSTACKTOP - sizeof(*utf));
+
+		// check if it is recursively call
+		if ((tf->tf_esp < UXSTACKTOP) && (tf->tf_esp >= 
+					(uintptr_t)(UXSTACKTOP - PGSIZE))) {
+			utf = (struct UTrapframe *)(tf->tf_esp - 4 - sizeof(*utf));
+		}
+
+		user_mem_assert(curenv, (void *)utf, sizeof(*utf), PTE_W);
+
+		// tf->tf_esp -= 4;
+		// *(uint32_t *)tf->tf_esp = tf->tf_eip;
+
+		// *(uint32_t *)(utf + 1) = 0;
+		utf->utf_fault_va = fault_va;
+		utf->utf_err = tf->tf_err;
+		utf->utf_regs = tf->tf_regs;
+		utf->utf_eip = tf->tf_eip;
+		utf->utf_eflags = tf->tf_eflags;
+		utf->utf_esp = (uintptr_t)tf->tf_esp;
+
+		tf->tf_eip = (uintptr_t)curenv->env_pgfault_upcall;
+		tf->tf_esp = (uintptr_t)utf;
+		env_run(curenv);
+	}
 
 	// Destroy the environment that caused the fault.
 	cprintf("[%08x] user fault va %08x ip %08x\n",

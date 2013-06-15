@@ -685,6 +685,11 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 	uint32_t i, checked_len;
 	pte_t *pte;
 
+	if (va >= (void *)ULIM) {
+		user_mem_check_addr = (uintptr_t) va;
+		return -E_FAULT;
+	}
+
 	// check the first page
 	checked_va = (void *)va;
 	checked_len = (ROUNDUP(va, PGSIZE) - va);
@@ -721,7 +726,7 @@ user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 void
 user_mem_assert(struct Env *env, const void *va, size_t len, int perm)
 {
-	if (user_mem_check(env, va, len, perm | PTE_U) < 0) {
+	if (user_mem_check(env, va, len, (perm | PTE_U | PTE_P)) < 0) {
 		cprintf("[%08x] user_mem_check assertion failure for "
 			"va %08x\n", env->env_id, user_mem_check_addr);
 		env_destroy(env);	// may not return
