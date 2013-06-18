@@ -367,10 +367,6 @@ page_fault_handler(struct Trapframe *tf)
 
 		user_mem_assert(curenv, (void *)utf, sizeof(*utf), PTE_W);
 
-		// tf->tf_esp -= 4;
-		// *(uint32_t *)tf->tf_esp = tf->tf_eip;
-
-		// *(uint32_t *)(utf + 1) = 0;
 		utf->utf_fault_va = fault_va;
 		utf->utf_err = tf->tf_err;
 		utf->utf_regs = tf->tf_regs;
