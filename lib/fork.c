@@ -26,14 +26,13 @@ pgfault(struct UTrapframe *utf)
 
 	// LAB 4: Your code here.
 
-	if (!(err & 0x2))
-		panic("the faulting access was not a write operation: 0x%08x", 
-				err);
-
-	if ((uvpt[PGNUM(addr)] & (PTE_P | PTE_U | PTE_COW)) != 
-			(PTE_P | PTE_U | PTE_COW))
-		panic("the faulting access was not write to a copy-on-write"
-				" page: 0x%08x", PGOFF(uvpt[PGNUM(addr)]));
+	if (!(err & 0x2) || ((uvpt[PGNUM(addr)] & (PTE_P | PTE_U | PTE_COW)) !=
+					(PTE_P | PTE_U | PTE_COW))) {
+		cprintf("[%08x] user fault %p ip %08x\n",
+				sys_getenvid(), addr, utf->utf_eip);
+		panic("Invalid fault access: Err = 0x%08x, PTE_FLAGS = 0x%08x",
+				err, PGOFF(uvpt[PGNUM(addr)]));
+	}
 
 	// Allocate a new page, map it at a temporary location (PFTEMP),
 	// copy the data from the old page to the new page, then move the new

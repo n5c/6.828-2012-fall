@@ -101,7 +101,7 @@ trap_init(void)
 	_SETGATE(idt[36], false, GD_KT, handler36, 0);
 	_SETGATE(idt[39], false, GD_KT, handler39, 0);
 	_SETGATE(idt[46], false, GD_KT, handler46, 0);
-	_SETGATE(idt[48], true, GD_KT, handler48, 0x3);
+	_SETGATE(idt[48], false, GD_KT, handler48, 0x3);
 	_SETGATE(idt[51], false, GD_KT, handler51, 0);
 
 	// Per-CPU setup 
@@ -215,7 +215,11 @@ trap_dispatch(struct Trapframe *tf)
 		return;
 	}
 
-	page_fault_handler(tf);
+	if (tf->tf_trapno == T_PGFLT)
+		page_fault_handler(tf);
+
+	if (tf->tf_trapno == T_BRKPT)
+		monitor(tf);
 
 	// Handle spurious interrupts
 	// The hardware sometimes raises these because of noise on the
@@ -229,6 +233,11 @@ trap_dispatch(struct Trapframe *tf)
 	// Handle clock interrupts. Don't forget to acknowledge the
 	// interrupt using lapic_eoi() before calling the scheduler!
 	// LAB 4: Your code here.
+	if (tf->tf_trapno == (IRQ_OFFSET + IRQ_TIMER)) {
+		cprintf("handle IRQ_TIMER\n");
+		lapic_eoi();
+		sched_yield();
+	}
 
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
@@ -314,9 +323,6 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 
 	// LAB 3: Your code here.
-	if (tf->tf_trapno == T_BRKPT)
-		monitor(tf);
-
 	if ((tf->tf_cs & 0x3) == 0x0) {
 		print_trapframe(tf);
 		panic("page fault\n");
