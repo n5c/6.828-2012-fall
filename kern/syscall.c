@@ -354,7 +354,44 @@ static int
 sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 {
 	// LAB 4: Your code here.
-	panic("sys_ipc_try_send not implemented");
+	// panic("sys_ipc_try_send not implemented");
+
+	struct Env *e;
+	int result;
+
+	result = envid2env(envid, &e, 0);
+	if (result != 0)
+		return result;
+
+	if (e->env_ipc_recving != true)
+		return -E_IPC_NOT_RECV;
+
+	if (srcva < (void *)UTOP) {
+		pte_t *pte;
+		if (PGOFF(srcva))
+			return -E_INVAL;
+		if ((perm & ~PTE_SYSCALL) || !(perm & (PTE_U | PTE_P)))
+			return -E_INVAL;
+		pte = pgdir_walk(curenv->env_pgdir, srcva, true);
+		if (pte == NULL)
+			return -E_INVAL;
+		if ((perm & PTE_W) && !(*pte & PTE_W))
+			return -E_INVAL;
+		if (e->env_ipc_dstva < (void *)UTOP) {
+			result = sys_page_map(curenv->env_id, srcva, e->env_id, 
+					e->env_ipc_dstva, perm);
+			if (result != 0)
+				return result;
+		}
+	}
+
+	e->env_ipc_recving = false;
+	e->env_ipc_from = curenv->env_id;
+	e->env_ipc_value = value;
+	e->env_ipc_perm = perm;
+	e->env_status = ENV_RUNNABLE;
+
+	return 0;
 }
 
 // Block until a value is ready.  Record that you want to receive
@@ -372,7 +409,14 @@ static int
 sys_ipc_recv(void *dstva)
 {
 	// LAB 4: Your code here.
-	panic("sys_ipc_recv not implemented");
+	// panic("sys_ipc_recv not implemented");
+	if (dstva < (void *)UTOP) {
+		if (PGOFF(dstva))
+			return -E_INVAL;
+	}
+	curenv->env_ipc_recving = true;
+	curenv->env_ipc_dstva = dstva;
+	curenv->env_status = ENV_NOT_RUNNABLE;
 	return 0;
 }
 
@@ -385,8 +429,8 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 	// LAB 3: Your code here.
 
 	// panic("syscall not implemented");
-
 	int32_t result = 0;
+
 	switch (syscallno) {
 	case SYS_cputs:
 		sys_cputs((char *)a1, a2);
@@ -399,9 +443,6 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 		break;
 	case SYS_env_destroy:
 		result = sys_env_destroy(a1);
-		break;
-	case SYS_yield:
-		sys_yield();
 		break;
 	case SYS_page_alloc:
 		result = sys_page_alloc(a1, (void *)a2, a3);
@@ -420,6 +461,15 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 		break;
 	case SYS_env_set_pgfault_upcall:
 		result = sys_env_set_pgfault_upcall(a1, (void *)a2);
+		break;
+	case SYS_yield:
+		sys_yield();
+		break;
+	case SYS_ipc_try_send:
+		result = sys_ipc_try_send(a1, a2, (void *)a3, a4);
+		break;
+	case SYS_ipc_recv:
+		result = sys_ipc_recv((void *)a1);
 		break;
 	default:
 		result = -E_INVAL;
