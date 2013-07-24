@@ -33,7 +33,13 @@ bc_pgfault(struct UTrapframe *utf)
 	// Hint: first round addr to page boundary.
 	//
 	// LAB 5: you code here:
+	r = sys_page_alloc(thisenv->env_id, ROUNDDOWN(addr, BLKSIZE), (PTE_P | PTE_U | PTE_W));
+	if (r < 0)
+		panic("sys_page_alloc: %e", r);
 
+	r = ide_read((blockno * BLKSECTS), ROUNDDOWN(addr, BLKSIZE), BLKSECTS);
+	if (r < 0)
+		panic("ide_read: %e", r);
 }
 
 
