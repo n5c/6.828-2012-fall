@@ -144,7 +144,15 @@ sys_env_set_trapframe(envid_t envid, struct Trapframe *tf)
 	// LAB 5: Your code here.
 	// Remember to check whether the user has supplied us with a good
 	// address!
-	panic("sys_env_set_trapframe not implemented");
+	// panic("sys_env_set_trapframe not implemented");
+
+	int r;
+	struct Env *e;
+	r = envid2env(envid, &e, 1);
+	if (r != 0)
+		return r;
+	e->env_tf = *tf;
+	return 0;
 }
 
 // Set the page fault upcall for 'envid' by modifying the corresponding struct
@@ -271,20 +279,20 @@ sys_page_map(envid_t srcenvid, void *srcva,
 		return result;
 
 	if ((srcva >= (void *)UTOP) || PGOFF(srcva))
-		return E_INVAL;
+		return -E_INVAL;
 	
 	if ((dstva >= (void *)UTOP) || PGOFF(dstva))
-		return E_INVAL;
+		return -E_INVAL;
 
 	if ((perm & ~PTE_SYSCALL) || !(perm & (PTE_U | PTE_P)))
-		return E_INVAL;
+		return -E_INVAL;
 
 	p = page_lookup(srce->env_pgdir, srcva, &pte);
 	if (p == NULL)
-		return E_INVAL;
+		return -E_INVAL;
 
 	if (!(*pte & PTE_W) && (perm & PTE_W))
-		return E_INVAL;
+		return -E_INVAL;
 
 	result = page_insert(dste->env_pgdir, p, dstva, perm);
 	if (result != 0)
@@ -379,19 +387,23 @@ sys_ipc_try_send(envid_t envid, uint32_t value, void *srcva, unsigned perm)
 		return -E_IPC_NOT_RECV;
 
 	if (srcva < (void *)UTOP) {
-		pte_t *pte;
 		if (PGOFF(srcva))
 			return -E_INVAL;
+
 		if ((perm & ~PTE_SYSCALL) || !(perm & (PTE_U | PTE_P)))
 			return -E_INVAL;
-		pte = pgdir_walk(curenv->env_pgdir, srcva, true);
-		if (pte == NULL)
-			return -E_INVAL;
-		if ((perm & PTE_W) && !(*pte & PTE_W))
-			return -E_INVAL;
+
+		pte_t *pte;
+		struct PageInfo *p;
+		p = page_lookup(curenv->env_pgdir, srcva, &pte);
+		if (p == NULL)
+			return E_INVAL;
+
+		if (!(*pte & PTE_W) && (perm & PTE_W))
+			return E_INVAL;
+
 		if (e->env_ipc_dstva < (void *)UTOP) {
-			result = sys_page_map(curenv->env_id, srcva, e->env_id, 
-					e->env_ipc_dstva, perm);
+			result = page_insert(e->env_pgdir, p, e->env_ipc_dstva, perm);
 			if (result != 0)
 				return result;
 		}
@@ -426,6 +438,7 @@ sys_ipc_recv(void *dstva)
 		if (PGOFF(dstva))
 			return -E_INVAL;
 	}
+
 	curenv->env_ipc_recving = true;
 	curenv->env_ipc_dstva = dstva;
 	curenv->env_status = ENV_NOT_RUNNABLE;
@@ -470,6 +483,9 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 		break;
 	case SYS_env_set_status:
 		result = sys_env_set_status(a1, a2);
+		break;
+	case SYS_env_set_trapframe:
+		result = sys_env_set_trapframe(a1, (void *)a2);
 		break;
 	case SYS_env_set_pgfault_upcall:
 		result = sys_env_set_pgfault_upcall(a1, (void *)a2);
