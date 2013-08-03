@@ -26,12 +26,22 @@ pgfault(struct UTrapframe *utf)
 
 	// LAB 4: Your code here.
 
-	if (!(err & 0x2) || ((uvpt[PGNUM(addr)] & (PTE_P | PTE_U | PTE_COW)) !=
-					(PTE_P | PTE_U | PTE_COW))) {
+	if (((err & 0x2) == 0) ||
+			((uvpd[PDX(addr)] & PTE_P) == 0) ||
+			((uvpt[PGNUM(addr)] & (PTE_P | PTE_U | PTE_COW)) != 
+			 (PTE_P | PTE_U | PTE_COW))) {
 		cprintf("[%08x] user fault %p ip %08x\n",
 				sys_getenvid(), addr, utf->utf_eip);
-		panic("Invalid fault access: Err = 0x%08x, PTE_FLAGS = 0x%08x",
-				err, PGOFF(uvpt[PGNUM(addr)]));
+		cprintf("Invalid fault access: Err = 0x%08x, ", err);
+		if ((uvpd[PDX(addr)] & PTE_P) == 0) {
+			cprintf("PDE_FLAGS = 0x%08x\n", 
+					(uvpd[PDX(addr)] & PTE_SYSCALL));
+		}
+		else {
+			cprintf("PTE_FLAGS = 0x%08x\n", 
+					(uvpt[PGNUM(addr)] & PTE_SYSCALL));
+		}
+		panic("");
 	}
 
 	// Allocate a new page, map it at a temporary location (PFTEMP),
@@ -78,18 +88,31 @@ duppage(envid_t envid, unsigned pn)
 
 	// LAB 4: Your code here.
 	// panic("duppage not implemented");
-	if ((pn * PGSIZE) >= UTOP)
-		panic("invalid page number: %d (0x%08x)", pn, pn);
+	void *addr = (void *)(pn * PGSIZE);
+	int perm;
 
-	r = sys_page_map(0, (void *)(pn * PGSIZE), envid, (void *)(pn * PGSIZE), 
-			(PTE_P | PTE_U | PTE_COW));
+	if (addr >= (void *)UTOP)
+		panic("invalid page number: %d (0x%08x)", pn, addr);
+
+	perm = (uvpt[pn] & PTE_SYSCALL);
+
+	if ((perm & PTE_P) == 0)
+		return 0;
+
+	if (((perm & PTE_SHARE) == 0) && ((perm & PTE_W) != 0)) {
+		perm &= ~PTE_W;
+		perm |= PTE_COW;
+	}
+
+	r = sys_page_map(0, addr, envid, addr, perm);
 	if (r < 0)
 		panic("sys_page_map: %e", r);
 
-	r = sys_page_map(0, (void *)(pn * PGSIZE), 0, (void *)(pn * PGSIZE),
-			(PTE_P | PTE_U | PTE_COW));
-	if (r < 0)
-		panic("sys_page_map: %e", r);
+	if (perm & PTE_COW) {
+		r = sys_page_map(0, addr, 0, addr, perm);
+		if (r < 0)
+			panic("sys_page_map: %e", r);
+	}
 
 	return 0;
 }
@@ -116,9 +139,8 @@ fork(void)
 	// LAB 4: Your code here.
 	// panic("fork not implemented");
 	envid_t envid;
-	uint8_t *addr;
+	void *addr, *limit;
 	int r;
-	extern unsigned char end[];
 
 	set_pgfault_handler(pgfault);
 
@@ -132,34 +154,48 @@ fork(void)
 	}
 
 	// parent
-	for (addr = (uint8_t *)UTEXT; addr < end; addr += PGSIZE)
-		duppage(envid, PGNUM(addr));
+//	for (addr = (void *)UTEXT; addr < (void *)end; addr += PGSIZE)
+//		duppage(envid, PGNUM(addr));
+
+	for (addr = (void *)UTEXT; 
+			addr < (void *)ROUNDDOWN(&addr, PGSIZE); 
+			addr += (1 << PDXSHIFT)) {
+		if ((uvpd[PDX(addr)] & PTE_P) == 0)
+			continue;
+		limit = (addr + (1 << PDXSHIFT));
+		if (limit > (void *)ROUNDDOWN(&addr, PGSIZE))
+			limit = ROUNDDOWN(&addr, PGSIZE);
+		for (; addr < limit; addr += PGSIZE)
+			duppage(envid, PGNUM(addr));
+	}
 
 	// copy the stack
-	r = sys_page_alloc(envid, ROUNDDOWN(&addr, PGSIZE), (PTE_P | PTE_U | PTE_W));
+	addr = ROUNDDOWN(&addr, PGSIZE);
+	r = sys_page_alloc(envid, addr, (uvpt[PGNUM(addr)] & PTE_SYSCALL));
 	if (r < 0)
 		panic("sys_page_alloc: %e", r);
-	r = sys_page_map(envid, ROUNDDOWN(&addr, PGSIZE), 0, UTEMP, 
-			(PTE_P | PTE_U | PTE_W));
+	r = sys_page_map(envid, addr, 0, UTEMP, (uvpt[PGNUM(addr)] & PTE_SYSCALL));
 	if (r < 0)
 		panic("sys_page_map: %e", r);
-	memmove(UTEMP, ROUNDDOWN(&addr, PGSIZE), PGSIZE);
+	memmove(UTEMP, addr, PGSIZE);
 	r = sys_page_unmap(0, UTEMP);
 	if (r < 0)
 		panic("sys_page_unmap: %e", r);
 
 	// allocate a new page for the child's user exception stack
-	r = sys_page_alloc(envid, (void *)(UXSTACKTOP - PGSIZE), (PTE_P | PTE_U | PTE_W));
+	addr = (void *)(UXSTACKTOP - PGSIZE);
+	r = sys_page_alloc(envid, addr, (uvpt[PGNUM(addr)] & PTE_SYSCALL));
 	if (r < 0)
 		panic("sys_page_alloc: %e", r);
-	r = sys_page_map(envid, (void *)(UXSTACKTOP - PGSIZE), 0, UTEMP,
-			(PTE_P | PTE_U | PTE_W));
+	r = sys_page_map(envid, addr, 0, UTEMP, (uvpt[PGNUM(addr)] & PTE_SYSCALL));
 	if (r < 0)
 		panic("sys_page_map: %e", r);
-	memmove(UTEMP, (void *)(UXSTACKTOP - PGSIZE), PGSIZE);
+	memmove(UTEMP, addr, PGSIZE);
 	r = sys_page_unmap(0, UTEMP);
 	if (r < 0)
 		panic("sys_page_unmap: %e", r);
+
+	// set the page fault handler
 	extern void _pgfault_upcall(void);
 	r = sys_env_set_pgfault_upcall(envid, _pgfault_upcall);
 	if (r < 0)
